@@ -353,6 +353,7 @@ const app = {
     timelineData: { labels: [], hitRate: [], energy: [] },
     energySeries: { labels: [], static: [], dynamic: [], penalty: [] },
     baselineSeeded: false,
+    lastPowerTotals: { static: 0, dynamic: 0, penalty: 0 },
 
     // View Manager (Router)
     router: {
@@ -685,35 +686,36 @@ const app = {
             });
         }
 
+
+
         // 2. AMAT Chart (Mini Line)
         const amatCanvas = document.getElementById('amatChart');
-        if (amatCanvas) {
-            const ctxAmat = amatCanvas.getContext('2d');
-            this.charts.amat = new Chart(ctxAmat, {
-                type: 'line',
-                data: {
-                    labels: [],
-                    datasets: [{
-                        data: [],
-                        borderColor: '#9b59b6',
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        tension: 0.35,
-                        fill: true,
-                        backgroundColor: 'rgba(155, 89, 182, 0.16)'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false }, title: { display: false } },
-                    scales: {
-                        y: { display: false, beginAtZero: true },
-                        x: { display: false }
-                    }
+        const ctxAmat = amatCanvas.getContext('2d');
+        this.charts.amat = new Chart(ctxAmat, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    data: [],
+                    borderColor: '#9b59b6',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.35,
+                    fill: true,
+                    backgroundColor: 'rgba(155, 89, 182, 0.16)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, title: { display: false } },
+                scales: {
+                    y: { display: false, beginAtZero: true },
+                    x: { display: false }
                 }
-            });
-        }
+            }
+        });
+
 
         // 3. Hit Rate Chart (Mini Pie)
         const pieCanvas = document.getElementById('hitMissPieChart');
@@ -799,6 +801,7 @@ const app = {
         if (timelineCanvas) {
             const ctxTimeline = timelineCanvas.getContext('2d');
             this.charts.timeline = new Chart(ctxTimeline, {
+                type: 'line',
                 data: {
                     labels: [],
                     datasets: [
@@ -894,29 +897,42 @@ const app = {
             });
         }
 
-        // Initialize Waveform Canvas
-        this.waveformCtx = document.getElementById('signalCanvas').getContext('2d');
+        // Initialize Waveform Canvas (guard if missing)
+        const signalCanvas = document.getElementById('signalCanvas');
+        this.waveformCtx = signalCanvas ? signalCanvas.getContext('2d') : null;
         this.waveformTime = 0;
         this.waveformHistory = [];
     },
 
     drawWaveform() {
+        // Try to re-acquire context if missing
+        if (!this.waveformCtx) {
+            const canvas = document.getElementById('signalCanvas');
+            if (canvas) this.waveformCtx = canvas.getContext('2d');
+        }
         if (!this.waveformCtx) return;
+
         const ctx = this.waveformCtx;
 
         // Ensure canvas resolution matches display size
         const canvas = ctx.canvas;
         const rect = canvas.getBoundingClientRect();
-        if (canvas.width !== rect.width || canvas.height !== rect.height) {
-            canvas.width = rect.width;
-            canvas.height = rect.height;
+        if (rect.width > 0 && rect.height > 0) {
+            if (canvas.width !== rect.width || canvas.height !== rect.height) {
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+            }
+        } else {
+            // Fallback if hidden
+            canvas.width = canvas.width || 600;
+            canvas.height = canvas.height || 200;
         }
 
         const width = canvas.width;
         const height = canvas.height;
 
         // Clear with Grid
-        ctx.fillStyle = '#2d3436';
+        ctx.fillStyle = '#1e272e'; // Darker background
         ctx.fillRect(0, 0, width, height);
 
         // Draw Grid Lines
@@ -933,11 +949,21 @@ const app = {
 
         // Update History
         this.waveformTime++;
+        // Logic: If sim exists and we have a valid hit status, use it. 
+        // If not (e.g. init), show low signal.
+        let hitVal = 0;
+        let missVal = 0;
+
+        if (this.sim && typeof this.sim.lastAccessHit === 'boolean') {
+            hitVal = this.sim.lastAccessHit ? 1 : 0;
+            missVal = this.sim.lastAccessHit ? 0 : 1;
+        }
+
         const currentState = {
-            clk: this.waveformTime % 2, // Simple toggle clock
-            hit: this.sim.lastAccessHit ? 1 : 0,
-            miss: !this.sim.lastAccessHit ? 1 : 0,
-            we: 0 // Write Enable (placeholder)
+            clk: this.waveformTime % 2,
+            hit: hitVal,
+            miss: missVal,
+            we: 0
         };
         this.waveformHistory.push(currentState);
         if (this.waveformHistory.length > 50) this.waveformHistory.shift();
@@ -1013,7 +1039,7 @@ const app = {
             this.charts.accessBar.update();
         }
 
-        if (this.charts.timeline && res) {
+        if (this.charts.timeline) {
             this.charts.timeline.data.labels = this.timelineData.labels;
             this.charts.timeline.data.datasets[0].data = this.timelineData.hitRate;
             this.charts.timeline.data.datasets[1].data = this.timelineData.energy;
@@ -1065,6 +1091,7 @@ const app = {
         );
         this.timelineData = { labels: [], hitRate: [], energy: [] };
         this.energySeries = { labels: [], static: [], dynamic: [], penalty: [] };
+        this.lastPowerTotals = { static: 0, dynamic: 0, penalty: 0 };
         this.seedCharts();
         this.parseAddressSequence(); // Parse addresses and operations
         this.stepIndex = 0;
@@ -1598,18 +1625,15 @@ const app = {
 
         // AMAT Calculation
         // Assumptions: Hit Time = 1 cycle, Miss Penalty = 100 cycles
-        const hitTime = 1;
-        const missPenalty = 100;
-        const missRate = sim.stats.accesses > 0 ? (sim.stats.misses / sim.stats.accesses) : 0;
-        const amat = hitTime + (missRate * missPenalty);
-        document.getElementById('amatValue').textContent = amat.toFixed(2) + ' cycles';
+        const amat = sim.calculateAMAT();
+        document.getElementById('amatValue').textContent = amat.toFixed(1) + ' cycles';
 
         // Avg Power (Energy per Access)
         const avgPower = sim.stats.accesses > 0 ? (sim.powerStats.totalEnergy / sim.stats.accesses) : 0;
         const avgPowerEl = document.getElementById('avgPowerValue');
         if (avgPowerEl) avgPowerEl.textContent = avgPower.toFixed(2) + ' pJ/op';
 
-        // Record series for charts
+        // Record series for charts BEFORE updating
         this.recordSeries(hitRate, res ? res.energy : 0);
 
         // Update Charts
@@ -1624,6 +1648,9 @@ const app = {
     },
 
     recordSeries(hitRate, energy) {
+        // Debug Log
+        // console.log('Recording Series:', { step: this.stepIndex, hitRate, energy });
+
         const label = `S${this.stepIndex + 1}`;
         const maxPoints = 40;
         const trim = (arr) => {
@@ -1634,10 +1661,22 @@ const app = {
         this.timelineData.hitRate.push(parseFloat(hitRate.toFixed(2)));
         this.timelineData.energy.push(parseFloat(energy.toFixed(2)));
 
+        const deltaStatic = this.sim.powerStats.staticEnergy - this.lastPowerTotals.static;
+        const deltaDynamic = this.sim.powerStats.dynamicEnergy - this.lastPowerTotals.dynamic;
+        const deltaPenalty = this.sim.powerStats.missPenaltyEnergy - this.lastPowerTotals.penalty;
+
+        // console.log('Deltas:', { deltaStatic, deltaDynamic, deltaPenalty });
+
         this.energySeries.labels.push(label);
-        this.energySeries.static.push(this.sim.powerStats.staticEnergy);
-        this.energySeries.dynamic.push(this.sim.powerStats.dynamicEnergy);
-        this.energySeries.penalty.push(this.sim.powerStats.missPenaltyEnergy);
+        this.energySeries.static.push(parseFloat(deltaStatic.toFixed(2)));
+        this.energySeries.dynamic.push(parseFloat(deltaDynamic.toFixed(2)));
+        this.energySeries.penalty.push(parseFloat(deltaPenalty.toFixed(2)));
+
+        this.lastPowerTotals = {
+            static: this.sim.powerStats.staticEnergy,
+            dynamic: this.sim.powerStats.dynamicEnergy,
+            penalty: this.sim.powerStats.missPenaltyEnergy
+        };
 
         [this.timelineData.labels, this.timelineData.hitRate, this.timelineData.energy,
         this.energySeries.labels, this.energySeries.static, this.energySeries.dynamic, this.energySeries.penalty].forEach(trim);
@@ -1676,6 +1715,9 @@ const app = {
         this.stepIndex = 0;
         this.timelineData = { labels: [], hitRate: [], energy: [] };
         this.energySeries = { labels: [], static: [], dynamic: [], penalty: [] };
+        this.lastPowerTotals = { static: 0, dynamic: 0, penalty: 0 };
+        this.waveformHistory = [];
+        this.waveformTime = 0;
         this.seedCharts();
         document.querySelector('#resultsTable tbody').innerHTML = '';
         document.getElementById('hitRateValue').textContent = '0%';
@@ -1742,6 +1784,7 @@ const app = {
         const label = 'S0';
         this.timelineData = { labels: [label], hitRate: [0], energy: [0] };
         this.energySeries = { labels: [label], static: [0], dynamic: [0], penalty: [0] };
+        this.lastPowerTotals = { static: 0, dynamic: 0, penalty: 0 };
         if (this.charts.timeline) {
             this.charts.timeline.data.labels = this.timelineData.labels;
             this.charts.timeline.data.datasets[0].data = this.timelineData.hitRate;
@@ -1759,6 +1802,10 @@ const app = {
             this.charts.energyBar.data.datasets[0].data = [0, 0, 0];
             this.charts.energyBar.update();
         }
+        // Clear waveform baseline
+        this.waveformHistory = [];
+        this.waveformTime = 0;
+        this.drawWaveform();
     },
 
     showToast(msg) {
@@ -2051,6 +2098,7 @@ const app = {
         });
 
         trigger.addEventListener('click', () => {
+            console.log('Chat trigger clicked!');
             widget.classList.remove('closed');
             trigger.style.transform = 'scale(0)';
         });
@@ -2071,17 +2119,20 @@ const app = {
             const typingId = this.addChatMessage("Thinking...", 'bot', true);
 
             try {
+                console.log('Sending message to bot:', text);
                 const response = await this.getBotResponse(text);
-                // Remove typing indicator (by replacing or removing)
+                console.log('Received response:', response);
+
+                // Remove typing indicator
                 const typingMsg = document.getElementById(typingId);
                 if (typingMsg) typingMsg.remove();
 
                 this.addChatMessage(response, 'bot');
             } catch (e) {
-                console.error(e);
+                console.error('Chatbot Error:', e);
                 const typingMsg = document.getElementById(typingId);
                 if (typingMsg) typingMsg.remove();
-                this.addChatMessage("Sorry, I encountered an error. " + e.message, 'bot');
+                this.addChatMessage("Sorry, I encountered an error. Please check the console.", 'bot');
             }
         };
 
@@ -2115,11 +2166,13 @@ const app = {
 
         // If no API key, use fallback regex bot
         if (!apiKey || offline) {
+            console.log('Using local bot response (No Key/Offline)');
             return this.getLocalBotResponse(input);
         }
 
         // Call Gemini API
         try {
+            console.log('Calling Gemini API...');
             const response = await this.callGeminiAPI(input, apiKey);
             return response;
         } catch (error) {

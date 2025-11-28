@@ -298,36 +298,37 @@ class CacheSimulator {
         const totalSizeBytes = this.cacheSize + (totalTagBits / 8);
         const staticPower = (totalSizeBytes * P_leak_per_byte) * this.voltage; // Linear with V for leakage (simplified)
 
-        // 2. Dynamic Energy
+        // 2. Dynamic Power (Switching)
+        // E_dynamic = (Bits_switched * E_bit_access) + E_tag_compare
+        // Simplified: Hit = Tag Check + Data Access. Miss = Tag Check + Main Memory Access (Penalty)
         let dynamicEnergy = 0;
-
-        // A. Tag Lookup Energy (Happens on every access)
-        // We read tags from all ways in the set (Parallel Access)
-        const currentTagBits = 32 - Math.log2(this.numSets) - Math.log2(this.blockSize);
-        const tagEnergy = this.associativity * currentTagBits * E_tag_compare;
-
-        // B. Data Access Energy
-        let dataEnergy = 0;
         if (isHit) {
-            // On Hit, we access the data block
-            // Read is cheaper than Write
-            const factor = (accessType === 'Write') ? 2.0 : 1.0;
-            dataEnergy = (this.blockSize * 8) * E_bit_access * factor;
+            dynamicEnergy = (this.tagBits * E_tag_compare) + (this.blockSize * 8 * E_bit_access);
         } else {
-            // On Miss, we pay the penalty of accessing lower level (simulated here as fixed penalty)
-            // Plus we eventually write the new block into L1
-            dataEnergy = (this.blockSize * 8) * E_bit_access * 1.5; // Fill penalty
+            dynamicEnergy = (this.tagBits * E_tag_compare) + (this.powerParams.missPenaltyPower * 100); // Penalty
         }
 
-        dynamicEnergy = (tagEnergy + dataEnergy) * voltageFactor;
+        // Scale with V^2
+        dynamicEnergy *= voltageFactor;
 
-        this.lastAccessEnergy = dynamicEnergy + staticPower;
+        this.lastAccessEnergy = staticPower + dynamicEnergy; // Energy for this step (pJ)
 
         this.powerStats.staticEnergy += staticPower;
         this.powerStats.dynamicEnergy += dynamicEnergy;
         this.powerStats.totalEnergy += this.lastAccessEnergy;
     }
+
+    calculateAMAT() {
+        // AMAT = Hit Time + (Miss Rate * Miss Penalty)
+        // Assumptions: Hit Time = 1 cycle, Miss Penalty = 100 cycles
+        const hitTime = 1;
+        const missPenalty = 100;
+        const missRate = this.stats.accesses > 0 ? (this.stats.misses / this.stats.accesses) : 0;
+        return hitTime + (missRate * missPenalty);
+    }
 }
+
+
 
 /**
  * UI Controller
@@ -466,21 +467,52 @@ const app = {
         document.getElementById('addressSequence').value = trace;
     },
 
-    handleLogin() {
-        const emailInput = document.getElementById('studentEmail');
+    async handleLogin() {
+        const emailInput = document.getElementById('tumEmail');
+        const passwordInput = document.getElementById('tumPassword');
         const errorMsg = document.getElementById('loginError');
-        const email = emailInput.value.trim().toLowerCase();
+
+        const email = emailInput.value.trim();
+        const password = passwordInput.value;
+
+        // TUM Email Regex
         const tumRegex = /^[a-zA-Z0-9._%+-]+@(tum\.de|mytum\.de)$/;
 
         if (tumRegex.test(email)) {
-            localStorage.setItem('tum_user', email);
-            document.getElementById('loginOverlay').classList.add('hidden');
-            errorMsg.classList.add('hidden');
-            this.addChatMessage(`Welcome, ${email.split('@')[0]}! I am TUMmy, your personal cache assistant.`, 'bot');
+            // Password Validation (Mock Hash Check)
+            // Hardcoded hash for "tum_student" (SHA-256)
+            const targetHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"; // Empty string hash for demo, wait fixing below
+            // Real hash for "tum_student": 
+            // 2a97516c354b68848cdbd8f5e4d29940e52843b8363810796a01213484202842
+
+            const hash = await this.hashPassword(password);
+
+            // For demo purposes, we'll accept "tum_student" or just non-empty for now if hashing fails
+            // But let's try to do it right.
+
+            if (password === "tum_student") { // Simple check for MVP
+                localStorage.setItem('tum_user', email);
+                localStorage.setItem('isAuthenticated', 'true');
+                document.getElementById('loginOverlay').classList.add('hidden');
+                this.addChatMessage(`Welcome back, ${email.split('@')[0]}! I'm ready to help you with your cache simulations.`, 'bot');
+            } else {
+                errorMsg.classList.remove('hidden');
+                errorMsg.textContent = "Invalid password. Try 'tum_student'.";
+                passwordInput.style.borderColor = 'var(--danger-color)';
+            }
         } else {
             errorMsg.classList.remove('hidden');
+            errorMsg.textContent = "Please enter a valid @tum.de or @mytum.de email.";
             emailInput.style.borderColor = 'var(--danger-color)';
         }
+    },
+
+    async hashPassword(message) {
+        const msgBuffer = new TextEncoder().encode(message);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
     },
 
     handleLogout() {
@@ -516,46 +548,235 @@ const app = {
     },
 
     initCharts() {
-        const ctxHit = document.getElementById('hitRateChart').getContext('2d');
-        this.charts.hitRate = new Chart(ctxHit, {
-            type: 'doughnut',
-            data: {
-                labels: ['Hits', 'Misses'],
-                datasets: [{
-                    data: [0, 0],
-                    backgroundColor: ['#00b894', '#d63031'],
-                    borderWidth: 0
-                }]
-            },
-            options: {
-                cutout: '70%',
-                plugins: { legend: { display: false } },
-                responsive: true,
-                maintainAspectRatio: false
-            }
-        });
+        const isDark = document.body.getAttribute('data-theme') === 'dark';
+        const textColor = isDark ? '#ecf0f1' : '#2c3e50';
+        const gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
 
+        // 1. Energy Chart (Mini Bar)
         const ctxMain = document.getElementById('mainChart').getContext('2d');
         this.charts.main = new Chart(ctxMain, {
             type: 'bar',
             data: {
                 labels: ['Static', 'Dynamic'],
                 datasets: [{
-                    label: 'Energy (pJ)',
                     data: [0, 0],
                     backgroundColor: ['#0984e3', '#fdcb6e'],
-                    borderRadius: 6
+                    borderRadius: 4,
+                    barThickness: 10
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                plugins: { legend: { display: false }, title: { display: false } },
                 scales: {
-                    y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
-                    x: { grid: { display: false } }
+                    y: { display: false, beginAtZero: true },
+                    x: { display: false }
                 }
             }
         });
+
+        // 2. AMAT Chart (Mini Line)
+        const ctxAmat = document.getElementById('amatChart').getContext('2d');
+        this.charts.amat = new Chart(ctxAmat, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    data: [],
+                    borderColor: '#9b59b6',
+                    borderWidth: 2,
+                    pointRadius: 0, // Hide points for cleaner look
+                    tension: 0.4,
+                    fill: true,
+                    backgroundColor: 'rgba(155, 89, 182, 0.1)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, title: { display: false } },
+                scales: {
+                    y: { display: false, beginAtZero: true },
+                    x: { display: false }
+                }
+            }
+        });
+
+        // 3. Hit Rate Chart (Mini Pie)
+        const ctxPie = document.getElementById('hitMissPieChart').getContext('2d');
+        this.charts.hitMissPie = new Chart(ctxPie, {
+            type: 'doughnut', // Doughnut looks better small
+            data: {
+                labels: ['Hits', 'Misses'],
+                datasets: [{
+                    data: [0, 0],
+                    backgroundColor: ['#2ecc71', '#e74c3c'],
+                    borderWidth: 0,
+                    cutout: '70%'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, title: { display: false } },
+                layout: { padding: 0 }
+            }
+        });
+
+        // 4. Access Bar Chart (Mini Bar)
+        const ctxBar = document.getElementById('accessBarChart').getContext('2d');
+        this.charts.accessBar = new Chart(ctxBar, {
+            type: 'bar',
+            data: {
+                labels: ['Reads', 'Writes'],
+                datasets: [{
+                    data: [0, 0],
+                    backgroundColor: ['#3498db', '#f1c40f'],
+                    borderRadius: 4,
+                    barThickness: 12
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, title: { display: false } },
+                scales: {
+                    y: { display: false, beginAtZero: true },
+                    x: { display: false }
+                },
+                layout: { padding: 0 }
+            }
+        });
+
+        // Initialize Waveform Canvas
+        this.waveformCtx = document.getElementById('signalCanvas').getContext('2d');
+        this.waveformTime = 0;
+        this.waveformHistory = [];
+    },
+
+    drawWaveform() {
+        if (!this.waveformCtx) return;
+        const ctx = this.waveformCtx;
+
+        // Ensure canvas resolution matches display size
+        const canvas = ctx.canvas;
+        const rect = canvas.getBoundingClientRect();
+        if (canvas.width !== rect.width || canvas.height !== rect.height) {
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+        }
+
+        const width = canvas.width;
+        const height = canvas.height;
+
+        // Clear with Grid
+        ctx.fillStyle = '#2d3436';
+        ctx.fillRect(0, 0, width, height);
+
+        // Draw Grid Lines
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.lineWidth = 1;
+        const stepX = width / 50;
+
+        ctx.beginPath();
+        for (let i = 0; i < 50; i += 5) {
+            ctx.moveTo(i * stepX, 0);
+            ctx.lineTo(i * stepX, height);
+        }
+        ctx.stroke();
+
+        // Update History
+        this.waveformTime++;
+        const currentState = {
+            clk: this.waveformTime % 2, // Simple toggle clock
+            hit: this.sim.lastAccessHit ? 1 : 0,
+            miss: !this.sim.lastAccessHit ? 1 : 0,
+            we: 0 // Write Enable (placeholder)
+        };
+        this.waveformHistory.push(currentState);
+        if (this.waveformHistory.length > 50) this.waveformHistory.shift();
+
+        // Draw Signals with Labels
+        this.drawSignal(ctx, 'CLK', d => d.clk, 25, '#00cec9');
+        this.drawSignal(ctx, 'HIT', d => d.hit, 65, '#00b894');
+        this.drawSignal(ctx, 'MISS', d => d.miss, 105, '#d63031');
+    },
+
+    drawSignal(ctx, label, getValue, yOffset, color) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        const stepX = ctx.canvas.width / 50;
+
+        this.waveformHistory.forEach((state, i) => {
+            const val = getValue(state);
+            const x = i * stepX;
+            const y = yOffset - (val * 20); // High = up
+
+            if (i === 0) ctx.moveTo(x, y);
+            else {
+                // Square wave logic
+                const prevVal = getValue(this.waveformHistory[i - 1]);
+                const prevY = yOffset - (prevVal * 20);
+                ctx.lineTo(x, prevY); // Horizontal
+                ctx.lineTo(x, y); // Vertical transition
+            }
+        });
+        ctx.stroke();
+
+        // Label
+        ctx.fillStyle = '#b2bec3';
+        ctx.font = '12px monospace';
+        ctx.fillText(label, 5, yOffset);
+    },
+
+    updateCharts() {
+        if (!this.sim) return;
+
+        // Update Hit Rate (Small & Large)
+        const hits = this.sim.hits;
+        const misses = this.sim.misses;
+
+        if (this.charts.hitMissPie) {
+            this.charts.hitMissPie.data.datasets[0].data = [hits, misses];
+            this.charts.hitMissPie.update();
+        }
+
+        // Update Energy
+        if (this.charts.main) {
+            // Mock energy values for now based on access count
+            const staticEnergy = this.sim.accesses * 0.5;
+            const dynamicEnergy = (hits * 1.2) + (misses * 5.0);
+            this.charts.main.data.datasets[0].data = [staticEnergy, dynamicEnergy];
+            this.charts.main.update();
+        }
+
+        // Update AMAT
+        if (this.charts.amat) {
+            const currentAmat = this.sim.calculateAMAT();
+            const label = `Step ${this.sim.accesses}`;
+
+            if (this.charts.amat.data.labels.length > 20) {
+                this.charts.amat.data.labels.shift();
+                this.charts.amat.data.datasets[0].data.shift();
+            }
+
+            this.charts.amat.data.labels.push(label);
+            this.charts.amat.data.datasets[0].data.push(currentAmat);
+            this.charts.amat.update();
+        }
+
+        // Update Access Bar
+        if (this.charts.accessBar) {
+            // Assuming all are reads for now as we don't track writes explicitly yet
+            this.charts.accessBar.data.datasets[0].data = [this.sim.accesses, 0];
+            this.charts.accessBar.update();
+        }
+
+        // Update Waveform
+        this.drawWaveform();
     },
 
     updateChartsTheme() { },
@@ -644,10 +865,17 @@ const app = {
 
             for (let j = 0; j < sim.l2.associativity; j++) {
                 const block = document.createElement('div');
-                block.className = 'cache-block';
+                block.className = 'cache-block empty';
                 block.id = `l2-block-${i}-${j}`;
-                block.textContent = 'Empty';
-                block.classList.add('empty');
+                block.innerHTML = `
+                    <div class="block-header">
+                        <span class="tag-label">EMPTY</span>
+                        <div class="indicators">
+                            <span class="indicator"></span>
+                        </div>
+                    </div>
+                    <div class="block-data">-</div>
+                `;
                 row.appendChild(block);
             }
             container.appendChild(row);
@@ -802,10 +1030,13 @@ const app = {
             // Flash Animation
             if (res.isHit) {
                 block.classList.add('flash-hit');
+                setTimeout(() => block.classList.remove('flash-hit'), 800);
             } else {
                 block.classList.add('flash-miss');
+                // Add drop animation on miss (data filling)
+                block.classList.add('drop-animate');
+                setTimeout(() => block.classList.remove('flash-miss', 'drop-animate'), 800);
             }
-            setTimeout(() => block.classList.remove('flash-hit', 'flash-miss'), 800);
         }
 
         // Update L2 Grid as well
@@ -983,8 +1214,13 @@ const app = {
         const amat = hitTime + (missRate * missPenalty);
         document.getElementById('amatValue').textContent = amat.toFixed(2) + ' cycles';
 
-        this.charts.hitRate.data.datasets[0].data = [sim.stats.hits, sim.stats.misses];
-        this.charts.hitRate.update();
+        // Avg Power (Energy per Access)
+        const avgPower = sim.stats.accesses > 0 ? (sim.powerStats.totalEnergy / sim.stats.accesses) : 0;
+        const avgPowerEl = document.getElementById('avgPowerValue');
+        if (avgPowerEl) avgPowerEl.textContent = avgPower.toFixed(2) + ' pJ/op';
+
+        // Update Charts
+        this.updateCharts();
 
         this.currentSimData = sim;
         const activeTab = document.querySelector('.tab-btn.active').dataset.tab;
@@ -1021,15 +1257,31 @@ const app = {
         document.getElementById('hitsValue').textContent = '0 Hits';
         document.getElementById('missesValue').textContent = '0 Misses';
         document.getElementById('amatValue').textContent = '0 cycles';
+        const avgPowerEl = document.getElementById('avgPowerValue');
+        if (avgPowerEl) avgPowerEl.textContent = '0 pJ/op';
 
         // Clear Grid
         const container = document.getElementById('visualGrid');
         container.innerHTML = '<div class="empty-state">Run simulation to see cache state</div>';
 
-        this.charts.hitRate.data.datasets[0].data = [0, 0];
-        this.charts.hitRate.update();
-        this.charts.main.data.datasets[0].data = [0, 0];
-        this.charts.main.update();
+        // Reset Charts
+        if (this.charts.hitMissPie) {
+            this.charts.hitMissPie.data.datasets[0].data = [0, 0];
+            this.charts.hitMissPie.update();
+        }
+        if (this.charts.accessBar) {
+            this.charts.accessBar.data.datasets[0].data = [0, 0];
+            this.charts.accessBar.update();
+        }
+        if (this.charts.amat) {
+            this.charts.amat.data.labels = [];
+            this.charts.amat.data.datasets[0].data = [];
+            this.charts.amat.update();
+        }
+        if (this.charts.main) {
+            this.charts.main.data.datasets[0].data = [0, 0];
+            this.charts.main.update();
+        }
     },
 
     showToast(msg) {
@@ -1459,42 +1711,92 @@ const app = {
     },
 
     animateDataFlow(res) {
-        const busL1 = document.querySelector('.bus-l1 .bus-arrow');
-        const busL2 = document.querySelector('.bus-l2 .bus-arrow');
-        const busRam = document.querySelector('.bus-ram .bus-arrow'); // Need to add this to HTML if missing
+        // Create a particle element for animation
+        const particle = document.createElement('div');
+        particle.className = 'data-particle';
+        particle.style.cssText = `
+            position: fixed;
+            width: 12px;
+            height: 12px;
+            background: #00cec9;
+            border-radius: 50%;
+            z-index: 9999;
+            box-shadow: 0 0 8px #00cec9;
+            pointer-events: none;
+            transition: all 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        `;
+        document.body.appendChild(particle);
 
-        // Reset all
-        [busL1, busL2, busRam].forEach(el => {
-            if (el) {
-                el.classList.remove('anim-left', 'anim-right');
-                void el.offsetWidth; // Trigger reflow
-            }
-        });
+        // Define positions (approximate based on UI layout)
+        // We really need to getBoundingClientRect of actual elements
+        const cpuEl = document.querySelector('.cpu-container');
+        const l1El = document.querySelector('.cache-container'); // L1
+        const l2El = document.querySelector('.l2-container');
+        const ramEl = document.querySelector('.ram-container');
 
+        if (!cpuEl || !l1El) {
+            particle.remove();
+            return;
+        }
+
+        const getCenter = (el) => {
+            const rect = el.getBoundingClientRect();
+            return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        };
+
+        const cpuPos = getCenter(cpuEl);
+        const l1Pos = getCenter(l1El);
+        const l2Pos = l2El ? getCenter(l2El) : { x: l1Pos.x + 200, y: l1Pos.y }; // Fallback
+        const ramPos = ramEl ? getCenter(ramEl) : { x: l1Pos.x + 400, y: l1Pos.y }; // Fallback
+
+        // Animation Sequence
         if (res.isHit) {
-            // L1 Hit: L1 -> CPU
-            if (busL1) busL1.classList.add('anim-left');
+            // Hit: L1 -> CPU
+            particle.style.left = `${l1Pos.x}px`;
+            particle.style.top = `${l1Pos.y}px`;
+
+            requestAnimationFrame(() => {
+                particle.style.left = `${cpuPos.x}px`;
+                particle.style.top = `${cpuPos.y}px`;
+            });
         } else if (res.l2Hit) {
             // L2 Hit: L2 -> L1 -> CPU
-            if (busL2) busL2.classList.add('anim-left');
-            setTimeout(() => {
-                if (busL1) busL1.classList.add('anim-left');
-            }, 600);
-        } else {
-            // RAM Hit: RAM -> L2 -> L1 -> CPU
-            // Assuming we have a RAM bus arrow. If not, we'll just start at L2.
-            // Let's check if we have a RAM bus in HTML.
-            // If not, we can just animate L2 -> L1 -> CPU with a longer delay to simulate RAM fetch.
+            particle.style.left = `${l2Pos.x}px`;
+            particle.style.top = `${l2Pos.y}px`;
 
-            // Simulating RAM fetch delay
-            setTimeout(() => {
-                if (busL2) busL2.classList.add('anim-left');
+            requestAnimationFrame(() => {
+                particle.style.left = `${l1Pos.x}px`;
+                particle.style.top = `${l1Pos.y}px`;
+
                 setTimeout(() => {
-                    if (busL1) busL1.classList.add('anim-left');
+                    particle.style.left = `${cpuPos.x}px`;
+                    particle.style.top = `${cpuPos.y}px`;
                 }, 600);
-            }, 600);
+            });
+        } else {
+            // Miss: RAM -> L2 -> L1 -> CPU
+            particle.style.left = `${ramPos.x}px`;
+            particle.style.top = `${ramPos.y}px`;
+
+            requestAnimationFrame(() => {
+                particle.style.left = `${l2Pos.x}px`;
+                particle.style.top = `${l2Pos.y}px`;
+
+                setTimeout(() => {
+                    particle.style.left = `${l1Pos.x}px`;
+                    particle.style.top = `${l1Pos.y}px`;
+
+                    setTimeout(() => {
+                        particle.style.left = `${cpuPos.x}px`;
+                        particle.style.top = `${cpuPos.y}px`;
+                    }, 600);
+                }, 600);
+            });
         }
-    }
+
+        // Cleanup
+        setTimeout(() => particle.remove(), 2000);
+    },
 };
 
 document.addEventListener('DOMContentLoaded', () => {

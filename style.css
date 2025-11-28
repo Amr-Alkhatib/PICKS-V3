@@ -1422,12 +1422,89 @@ td {
     }
 }
 
+@keyframes dropIn {
+    0% {
+        transform: translateY(-50px) scale(0.5);
+        opacity: 0;
+    }
+
+    60% {
+        transform: translateY(10px) scale(1.1);
+        opacity: 1;
+    }
+
+    100% {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
+}
+
+.drop-animate {
+    animation: dropIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
 .flash-hit {
     animation: flashHit 0.8s ease;
 }
 
 .flash-miss {
     animation: flashMiss 0.8s ease;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    .app-container {
+        padding: 10px;
+    }
+
+    .main-grid {
+        grid-template-columns: 1fr;
+        /* Stack vertically */
+        gap: 15px;
+    }
+
+    .header-content {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .header-controls {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .viz-container {
+        min-height: 400px;
+        /* Ensure chart visibility */
+    }
+
+    .charts-row {
+        flex-direction: column;
+        height: auto !important;
+    }
+
+    .chart-wrapper {
+        height: 200px;
+        margin-bottom: 15px;
+    }
+
+    /* Adjust font sizes */
+    h1 {
+        font-size: 1.5rem;
+    }
+
+    h2 {
+        font-size: 1.2rem;
+    }
+
+    /* Touch targets */
+    button,
+    input,
+    select {
+        min-height: 44px;
+        /* Apple Human Interface Guidelines */
+    }
 }
 
 /* TUM Logo Styles */
@@ -1471,4 +1548,141 @@ td {
     background: rgba(255, 255, 255, 0.1);
     border-radius: 8px;
     transition: background 0.3s;
+}
+
+/* =========================================
+   Phase 18: Graylog Dashboard Redesign
+   ========================================= */
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.graylog-card {
+    background-color: #2d3436;
+    /* Dark Grey */
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 180px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.graylog-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.card-label {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #b2bec3;
+    /* Subtle Text */
+    font-weight: 600;
+}
+
+.card-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+.big-number {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1;
+    margin-bottom: 5px;
+}
+
+.sub-text {
+    font-size: 0.8rem;
+    color: #dfe6e9;
+    margin-bottom: 10px;
+}
+
+.stats-row {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 10px;
+    font-size: 0.8rem;
+}
+
+.stat-item.green {
+    color: #00b894;
+}
+
+.stat-item.red {
+    color: #d63031;
+}
+
+.chart-mini-container {
+    height: 60px;
+    /* Mini chart height */
+    width: 100%;
+    position: relative;
+    margin-top: auto;
+    /* Push to bottom */
+}
+
+/* Wide card for Waveforms */
+.wide-card {
+    word-break: break-all;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 4px 6px;
+    border-radius: 4px;
+    text-align: center;
+}
+
+/* Empty State */
+.cache-block.empty .block-data {
+    color: rgba(255, 255, 255, 0.1);
+    font-style: italic;
+}
+
+/* Highlight Animations (Override/Enhance) */
+.flash-hit {
+    animation: flashHitPremium 0.6s ease-out;
+}
+
+.flash-miss {
+    animation: flashMissPremium 0.6s ease-out;
+}
+
+@keyframes flashHitPremium {
+    0% {
+        background: rgba(0, 184, 148, 0.8);
+        box-shadow: 0 0 20px rgba(0, 184, 148, 0.6);
+    }
+
+    100% {
+        background: linear-gradient(135deg, rgba(45, 52, 54, 0.9) 0%, rgba(30, 35, 37, 0.95) 100%);
+    }
+}
+
+@keyframes flashMissPremium {
+    0% {
+        background: rgba(214, 48, 49, 0.8);
+        box-shadow: 0 0 20px rgba(214, 48, 49, 0.6);
+    }
+
+    100% {
+        background: linear-gradient(135deg, rgba(45, 52, 54, 0.9) 0%, rgba(30, 35, 37, 0.95) 100%);
+    }
 }

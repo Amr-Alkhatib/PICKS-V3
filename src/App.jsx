@@ -6,6 +6,7 @@ import { CPUPage } from './components/Pages/CPUPage';
 import { L1Page } from './components/Pages/L1Page';
 import { RAMPage } from './components/Pages/RAMPage';
 import { TheoryPage } from './components/Pages/TheoryPage';
+import { HistoryPage } from './components/Pages/HistoryPage';
 import { LoginOverlay } from './components/Auth/LoginOverlay';
 import { Chatbot } from './components/Chatbot/Chatbot';
 
@@ -35,6 +36,7 @@ function App() {
                     <Route path="/l2" element={<L1Page level="L2" />} />
                     <Route path="/ram" element={<RAMPage />} />
                     <Route path="/theory" element={<TheoryPage />} />
+                    <Route path="/history" element={<HistoryPage />} />
                 </Routes>
 
                 <Chatbot />

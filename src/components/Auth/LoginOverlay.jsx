@@ -1,17 +1,60 @@
 import { useState } from 'react';
+import { authAPI } from '../../api/endpoints';
 
 export function LoginOverlay({ onLogin }) {
     const [mode, setMode] = useState('login');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirm, setConfirm] = useState('');
+    const [name, setName] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
 
-    const handleLogin = () => {
-        // Mock login for now
-        if (email && password) {
+    const handleLogin = async () => {
+        setError('');
+        setLoading(true);
+
+        try {
+            const response = await authAPI.login(email, password);
+            localStorage.setItem('auth_token', response.data.token);
+            localStorage.setItem('user', JSON.stringify(response.data.user));
             onLogin(email);
+        } catch (err) {
+            setError(err.response?.data?.error || 'Login failed. Please try again.');
+        } finally {
+            setLoading(false);
         }
     };
+
+    const handleRegister = async () => {
+        setError('');
+
+        if (password !== confirm) {
+            setError('Passwords do not match');
+            return;
+        }
+
+        if (password.length < 8) {
+            setError('Password must be at least 8 characters long');
+            return;
+        }
+
+        setLoading(true);
+
+        try {
+            const response = await authAPI.register(name, email, password, confirm);
+            localStorage.setItem('auth_token', response.data.token);
+            localStorage.setItem('user', JSON.stringify(response.data.user));
+            onLogin(email);
+        } catch (err) {
+            setError(err.response?.data?.errors?.email?.[0] || err.response?.data?.error || 'Registration failed. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleLoginSubmit = mode === 'login' ? handleLogin : handleRegister;
 
     return (
         <div id="loginOverlay" className="login-overlay fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm transition-opacity duration-300">
@@ -41,6 +84,18 @@ export function LoginOverlay({ onLogin }) {
                         </div>
 
                         <div className="login-form space-y-4">
+                            {mode === 'register' && (
+                                <div className="input-group">
+                                    <input
+                                        type="text"
+                                        placeholder="Full Name"
+                                        className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-tum-blue/50 focus:border-tum-blue outline-none transition-all placeholder-gray-400"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        disabled={loading}
+                                    />
+                                </div>
+                            )}
                             <div className="input-group">
                                 <input
                                     type="email"
@@ -48,35 +103,66 @@ export function LoginOverlay({ onLogin }) {
                                     className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-tum-blue/50 focus:border-tum-blue outline-none transition-all placeholder-gray-400"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
+                                    disabled={loading}
                                 />
                             </div>
                             <div className="input-group password-row">
                                 <input
-                                    type="password"
+                                    type={showPassword ? "text" : "password"}
                                     placeholder="Password"
                                     className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-tum-blue/50 focus:border-tum-blue outline-none transition-all placeholder-gray-400"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
+                                    disabled={loading}
                                 />
-                                <button className="toggle-password" type="button" aria-label="Toggle password">Show</button>
+                                <button 
+                                    className="toggle-password" 
+                                    type="button" 
+                                    aria-label="Toggle password"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    disabled={loading}
+                                >
+                                    {showPassword ? "Hide" : "Show"}
+                                </button>
                             </div>
 
                             {mode === 'register' && (
                                 <div className="input-group confirm-group">
                                     <input
-                                        type="password"
+                                        type={showPassword ? "text" : "password"}
                                         placeholder="Confirm Password"
                                         className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-tum-blue/50 focus:border-tum-blue outline-none transition-all placeholder-gray-400"
                                         value={confirm}
                                         onChange={(e) => setConfirm(e.target.value)}
+                                        disabled={loading}
                                     />
                                 </div>
                             )}
 
+                            {error && (
+                                <div className="error-msg" style={{ background: 'rgba(214, 48, 49, 0.1)', border: '1px solid rgba(214, 48, 49, 0.3)', color: '#d63031', padding: '10px 12px', borderRadius: '6px', fontSize: '0.9rem' }}>
+                                    {error}
+                                </div>
+                            )}
+
                             {mode === 'login' ? (
-                                <button onClick={handleLogin} className="w-full py-3.5 rounded-xl bg-tum-blue hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-500/30 transition-all transform hover:-translate-y-0.5 active:translate-y-0" style={{ backgroundColor: 'var(--accent-color)' }}>Login</button>
+                                <button 
+                                    onClick={handleLoginSubmit} 
+                                    disabled={loading}
+                                    className="w-full py-3.5 rounded-xl bg-tum-blue hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-500/30 transition-all transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed" 
+                                    style={{ backgroundColor: 'var(--accent-color)' }}
+                                >
+                                    {loading ? 'Logging in...' : 'Login'}
+                                </button>
                             ) : (
-                                <button onClick={handleLogin} className="w-full py-3.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white font-bold shadow-lg shadow-teal-500/30 transition-all transform hover:-translate-y-0.5 active:translate-y-0" style={{ backgroundColor: 'var(--success-color)' }}>Create Account</button>
+                                <button 
+                                    onClick={handleLoginSubmit} 
+                                    disabled={loading}
+                                    className="w-full py-3.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white font-bold shadow-lg shadow-teal-500/30 transition-all transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed" 
+                                    style={{ backgroundColor: 'var(--success-color)' }}
+                                >
+                                    {loading ? 'Creating Account...' : 'Create Account'}
+                                </button>
                             )}
 
                             <div className="relative flex py-2 items-center">

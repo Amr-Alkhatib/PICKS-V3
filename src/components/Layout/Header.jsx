@@ -16,6 +16,10 @@ export function Header({ theme, toggleTheme, onLogout }) {
                     </div>
                 </div>
                 <div className="header-controls">
+                    <Link to="/history" className="secondary-btn small-btn"
+                        style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span className="icon">Clock</span> History
+                    </Link>
                     <Link to="/theory" className="secondary-btn small-btn"
                         style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '5px' }}>
                         <span className="icon">Book</span> Theory

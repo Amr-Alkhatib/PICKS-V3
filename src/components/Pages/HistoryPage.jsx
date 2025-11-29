@@ -27,7 +27,7 @@ export function HistoryPage() {
                 navigate('/');
                 return;
             }
-            setError(err.response?.data?.error || 'Failed to load simulations');
+            setError(normalizeError(err.response?.data, 'Failed to load simulations'));
             // Fallback to localStorage
             const stored = localStorage.getItem('simulatorHistory');
             if (stored) {
@@ -62,7 +62,7 @@ export function HistoryPage() {
             setSimulations(simulations.filter(sim => sim.id !== id));
             setDeleteConfirm(null);
         } catch (err) {
-            setError(err.response?.data?.error || 'Failed to delete simulation');
+            setError(normalizeError(err.response?.data, 'Failed to delete simulation'));
         }
     };
 
@@ -76,7 +76,7 @@ export function HistoryPage() {
                 setSimulations([]);
                 setDeleteConfirm(null);
             } catch (err) {
-                setError(err.response?.data?.error || 'Failed to clear history');
+                setError(normalizeError(err.response?.data, 'Failed to clear history'));
             }
         }
     };
@@ -101,7 +101,7 @@ export function HistoryPage() {
 
             {error && (
                 <div style={{ background: 'rgba(214, 48, 49, 0.1)', border: '1px solid rgba(214, 48, 49, 0.3)', color: '#d63031', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', fontSize: 'var(--font-sm)' }}>
-                    {error}
+                    {stringifyErrorForRender(error)}
                 </div>
             )}
 
@@ -227,4 +227,31 @@ export function HistoryPage() {
             )}
         </div>
     );
+}
+
+// Ensure error state is always a string (avoid rendering raw objects)
+function normalizeError(resp, fallback) {
+    if (!resp) return fallback;
+    if (typeof resp === 'string') return resp;
+    if (resp.errors) {
+        const messages = Object.values(resp.errors).flat().filter(Boolean).join(' ');
+        if (messages) return messages;
+    }
+    if (resp.error && typeof resp.error === 'string') return resp.error;
+    if (resp.message) return String(resp.message);
+    if (resp.code && resp.message) return `${resp.code}: ${resp.message}`;
+    try {
+        return JSON.stringify(resp);
+    } catch (_) {
+        return fallback;
+    }
+}
+
+function stringifyErrorForRender(value) {
+    if (typeof value === 'string') return value;
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return 'An error occurred';
+    }
 }

@@ -21,7 +21,12 @@ export function LoginOverlay({ onLogin }) {
             localStorage.setItem('user', JSON.stringify(response.data.user));
             onLogin(email);
         } catch (err) {
-            setError(err.response?.data?.error || 'Login failed. Please try again.');
+            // Surface backend errors more clearly and log full response for debugging
+            // (do not log passwords)
+            // eslint-disable-next-line no-console
+            console.error('Login error', err.response || err);
+            const resp = err.response?.data;
+            setError(normalizeError(resp, 'Login failed. Please try again.'));
         } finally {
             setLoading(false);
         }
@@ -48,7 +53,10 @@ export function LoginOverlay({ onLogin }) {
             localStorage.setItem('user', JSON.stringify(response.data.user));
             onLogin(email);
         } catch (err) {
-            setError(err.response?.data?.errors?.email?.[0] || err.response?.data?.error || 'Registration failed. Please try again.');
+            // eslint-disable-next-line no-console
+            console.error('Registration error', err.response || err);
+            const resp = err.response?.data;
+            setError(normalizeError(resp, 'Registration failed. Please try again.'));
         } finally {
             setLoading(false);
         }
@@ -141,7 +149,7 @@ export function LoginOverlay({ onLogin }) {
 
                             {error && (
                                 <div className="error-msg" style={{ background: 'rgba(214, 48, 49, 0.1)', border: '1px solid rgba(214, 48, 49, 0.3)', color: '#d63031', padding: '10px 12px', borderRadius: '6px', fontSize: '0.9rem' }}>
-                                    {error}
+                                    {stringifyErrorForRender(error)}
                                 </div>
                             )}
 
@@ -200,4 +208,31 @@ export function LoginOverlay({ onLogin }) {
             </div>
         </div>
     );
+}
+
+// Ensure error state is always a string (rendering an object triggers React error #31)
+function normalizeError(resp, fallback) {
+    if (!resp) return fallback;
+    if (typeof resp === 'string') return resp;
+    if (resp.errors) {
+        const messages = Object.values(resp.errors).flat().filter(Boolean).join(' ');
+        if (messages) return messages;
+    }
+    if (resp.error && typeof resp.error === 'string') return resp.error;
+    if (resp.message) return String(resp.message);
+    if (resp.code && resp.message) return `${resp.code}: ${resp.message}`;
+    try {
+        return JSON.stringify(resp);
+    } catch (_) {
+        return fallback;
+    }
+}
+
+function stringifyErrorForRender(value) {
+    if (typeof value === 'string') return value;
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return 'An error occurred';
+    }
 }

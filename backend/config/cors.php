@@ -24,7 +24,9 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => explode(',', env('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173')),
+    // Allow configuring CORS origins via env. Example: CORS_ALLOWED_ORIGINS="https://app.example.com,https://studio.vercel.app"
+    // If empty, fallback to FRONTEND_URL or localhost dev origin.
+    'allowed_origins' => explode(',', env('CORS_ALLOWED_ORIGINS', env('FRONTEND_URL', 'http://localhost:5173'))),
 
     'allowed_origins_patterns' => [],
 

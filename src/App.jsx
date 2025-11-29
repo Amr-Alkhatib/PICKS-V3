@@ -18,8 +18,22 @@ function App() {
         document.documentElement.setAttribute('data-theme', theme);
     }, [theme]);
 
+    // Restore auth state if a token is already stored (keeps user logged in on refresh)
+    useEffect(() => {
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+            setIsAuthenticated(true);
+        }
+    }, []);
+
     const toggleTheme = () => {
         setTheme(prev => prev === 'light' ? 'dark' : 'light');
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('user');
+        setIsAuthenticated(false);
     };
 
     return (
@@ -27,7 +41,7 @@ function App() {
             <div className="app-container">
                 {!isAuthenticated && <LoginOverlay onLogin={() => setIsAuthenticated(true)} />}
 
-                <Header theme={theme} toggleTheme={toggleTheme} onLogout={() => setIsAuthenticated(false)} />
+                <Header theme={theme} toggleTheme={toggleTheme} onLogout={handleLogout} />
 
                 <Routes>
                     <Route path="/" element={<SystemDiagram />} />

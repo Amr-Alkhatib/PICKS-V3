@@ -6,7 +6,15 @@ return [
     | Sanctum Settings
     |--------------------------------------------------------------------------
     */
-    'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', 'localhost,127.0.0.1,127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:5173')),
+    // Domains that should receive stateful (cookie) authentication. Configure this
+    // on the server with `SANCTUM_STATEFUL_DOMAINS` (comma-separated). By default
+    // this falls back to the FRONTEND_URL (protocol stripped) so deployments on
+    // Vercel or other hosts can be whitelisted.
+    'stateful' => explode(',', env(
+        'SANCTUM_STATEFUL_DOMAINS',
+        // strip protocol from FRONTEND_URL if present
+        str_replace(['http://', 'https://'], '', env('FRONTEND_URL', 'localhost'))
+    )),
 
     'guard' => ['web'],
 
